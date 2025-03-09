@@ -1005,6 +1005,7 @@ public class AugmentosService extends Service implements AugmentOsActionsCallbac
         sendStatusToAugmentOsManager();
     }
 
+    // TODO: Can remove this?
     @Override
     public void startApp(String packageName) {
         Log.d("AugmentOsService", "Starting app: " + packageName);
@@ -1016,6 +1017,7 @@ public class AugmentosService extends Service implements AugmentOsActionsCallbac
         }
     }
 
+    // TODO: Can remove this?
     @Override
     public void stopApp(String packageName) {
         Log.d("AugmentOsService", "Stopping app: " + packageName);
@@ -1057,12 +1059,14 @@ public class AugmentosService extends Service implements AugmentOsActionsCallbac
         editor.apply();
     }
 
+    // TODO: Can remove this?
     @Override
     public void installAppFromRepository(String repository, String packageName) throws JSONException {
         Log.d("AugmentOsService", "Installing app from repository: " + packageName);
         blePeripheral.sendNotifyManager("Not implemented", "error");
     }
 
+    // TODO: Can remove this?
     @Override
     public void uninstallApp(String uninstallPackageName) {
         Log.d(TAG, "uninstallApp not implemented");
