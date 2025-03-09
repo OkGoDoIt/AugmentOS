@@ -9,6 +9,8 @@ import { useStatus } from '../providers/AugmentOSStatusProvider';
 import AppIcon from './AppIcon';
 import { BluetoothService } from '../BluetoothService';
 import BackendServerComms from '../backend_comms/BackendServerComms';
+import { AppInfo } from '../AugmentOSStatusParser';
+import GlobalEventEmitter from '../logic/GlobalEventEmitter';
 
 interface YourAppsListProps {
     isDarkTheme: boolean;
@@ -17,6 +19,7 @@ interface YourAppsListProps {
 const YourAppsList: React.FC<YourAppsListProps> = ({ isDarkTheme }) => {
     const { status } = useStatus();
     const [_isLoading, setIsLoading] = React.useState(false);
+    const [optimisticRunningApps, setOptimisticRunningApps] = React.useState<string[]>([]);
     const bluetoothService = BluetoothService.getInstance();
 
     const [containerWidth, setContainerWidth] = React.useState(0);
@@ -28,31 +31,59 @@ const YourAppsList: React.FC<YourAppsListProps> = ({ isDarkTheme }) => {
     // Calculate the item width based on container width and margins
     const itemWidth = containerWidth > 0 ? (containerWidth - (GRID_MARGIN * numColumns)) / numColumns : 0;
 
-    const startApp = async (packageName: string) => {
+    const startApp = (packageName: string) => {
         setIsLoading(true);
-        try {
-            BackendServerComms.getInstance().startApp(packageName);
-        } catch (error) {
-            console.error('start app error:', error);
-        } finally {
-            setIsLoading(false);
+        
+        // Optimistically update UI to show app as running
+        setOptimisticRunningApps(prev => [...prev, packageName]);
+        
+        // Emit global event for app started
+        const appToEmit = status.apps.find(app => app.packageName === packageName);
+        if (appToEmit) {
+            GlobalEventEmitter.emit('APP_STARTED', {...appToEmit, is_running: true});
         }
+        
+        // Fire and forget - don't await the result
+        BackendServerComms.getInstance().startApp(packageName)
+            .catch(error => {
+                console.error('start app error:', error);
+                // Revert optimistic update on error
+                setOptimisticRunningApps(prev => prev.filter(name => name !== packageName));
+                // Emit app stopped on error
+                if (appToEmit) {
+                    GlobalEventEmitter.emit('APP_STOPPED', packageName);
+                }
+            })
+            .finally(() => {
+                setIsLoading(false);
+            });
+        
+        // Cleanup optimistic state after timeout (in case status update is delayed)
+        setTimeout(() => {
+            setOptimisticRunningApps(prev => prev.filter(name => name !== packageName));
+        }, 5000);
     };
 
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const backgroundColor = isDarkTheme ? '#1E1E1E' : '#F5F5F5';
 
-    // Optional: Filter out duplicate apps
+    // Optional: Filter out duplicate apps and apply optimistic updates
     const uniqueApps = React.useMemo(() => {
         const seen = new Set();
-        return status.apps.filter(app => {
+        return status.apps.map(app => {
+            // Apply optimistic updates - mark app as running if in optimisticRunningApps
+            if (optimisticRunningApps.includes(app.packageName)) {
+                return {...app, is_running: true};
+            }
+            return app;
+        }).filter(app => {
             if (seen.has(app.packageName)) {
                 return false;
             }
             seen.add(app.packageName);
             return true;
         });
-    }, [status.apps]);
+    }, [status.apps, optimisticRunningApps]);
 
     return (
         <View

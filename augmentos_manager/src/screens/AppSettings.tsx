@@ -20,6 +20,7 @@ import { AppInfo } from '../AugmentOSStatusParser';
 import LinearGradient from 'react-native-linear-gradient';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { getAppImage } from '../logic/getAppImage';
+import GlobalEventEmitter from '../logic/GlobalEventEmitter';
 
 type AppSettingsProps = NativeStackScreenProps<RootStackParamList, 'AppSettings'> & {
   isDarkTheme: boolean;
@@ -34,20 +35,64 @@ const AppSettings: React.FC<AppSettingsProps> = ({ route, isDarkTheme, toggleThe
   const [serverAppInfo, setServerAppInfo] = useState<any>(null);
   // Local state to track current values for each setting.
   const [settingsState, setSettingsState] = useState<{ [key: string]: any }>({});
+  // Optimistic UI state
+  const [optimisticRunning, setOptimisticRunning] = useState<boolean | null>(null);
   // Get app info from status
   const { status } = useStatus();
   const appInfo = useMemo(() => {
-    return status.apps.find(app => app.packageName === packageName) || null;
-  }, [status.apps, packageName]);
-
-  // Placeholder functions for app actions
-  const handleStartStopApp = () => {
-    console.log(`${appInfo?.is_running ? 'Stopping' : 'Starting'} app: ${packageName}`);
-    if (appInfo?.packageName && appInfo?.is_running) {
-      BackendServerComms.getInstance().stopApp(appInfo?.packageName);
-    } else if (appInfo?.packageName && !appInfo?.is_running) {
-      BackendServerComms.getInstance().startApp(appInfo?.packageName);
+    const app = status.apps.find(app => app.packageName === packageName) || null;
+    // Apply optimistic state if it exists
+    if (app && optimisticRunning !== null) {
+      return {...app, is_running: optimisticRunning};
     }
+    return app;
+  }, [status.apps, packageName, optimisticRunning]);
+
+  // Functions for app actions with optimistic updates
+  const handleStartStopApp = () => {
+    const isCurrentlyRunning = appInfo?.is_running || false;
+    console.log(`${isCurrentlyRunning ? 'Stopping' : 'Starting'} app: ${packageName}`);
+    
+    // Set optimistic state immediately
+    setOptimisticRunning(!isCurrentlyRunning);
+    
+    // Fire and forget - don't wait for response
+    if (appInfo?.packageName && isCurrentlyRunning) {
+      // Emit global event for stopping
+      GlobalEventEmitter.emit('APP_STOPPED', packageName);
+      
+      BackendServerComms.getInstance().stopApp(appInfo?.packageName)
+        .catch(error => {
+          console.error(`Error stopping app:`, error);
+          // Revert optimistic state on error
+          setOptimisticRunning(isCurrentlyRunning);
+          
+          // Emit app started again on error
+          if (appInfo) {
+            GlobalEventEmitter.emit('APP_STARTED', appInfo);
+          }
+        });
+    } else if (appInfo?.packageName && !isCurrentlyRunning) {
+      // Emit global event for starting with modified app info
+      if (appInfo) {
+        GlobalEventEmitter.emit('APP_STARTED', {...appInfo, is_running: true});
+      }
+      
+      BackendServerComms.getInstance().startApp(appInfo?.packageName)
+        .catch(error => {
+          console.error(`Error starting app:`, error);
+          // Revert optimistic state on error
+          setOptimisticRunning(isCurrentlyRunning);
+          
+          // Emit app stopped on error
+          GlobalEventEmitter.emit('APP_STOPPED', packageName);
+        });
+    }
+    
+    // Reset optimistic state after timeout (in case status update is delayed)
+    setTimeout(() => {
+      setOptimisticRunning(null);
+    }, 5000);
   };
 
   const handleUninstallApp = () => {
