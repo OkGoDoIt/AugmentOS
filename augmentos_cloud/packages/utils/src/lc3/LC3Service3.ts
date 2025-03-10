@@ -2,7 +2,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { logger } from '../logger';
 
 interface LC3Instance {
   samples: Float32Array;
@@ -31,7 +30,7 @@ export class LC3Service {
     if (this.initialized) return;
     try {
       const wasmPath = path.resolve(__dirname, 'liblc3.wasm');
-      logger.info('Loading WASM from:', wasmPath);
+      console.log('Loading WASM from:', wasmPath);
       const wasmBuffer = fs.readFileSync(wasmPath);
       const wasmModule = await WebAssembly.instantiate(wasmBuffer, {});
       this.lc3Exports = wasmModule.instance.exports;
@@ -45,9 +44,9 @@ export class LC3Service {
       );
       this.decoder = this.createDecoderInstance();
       this.initialized = true;
-      logger.info('✅ LC3 Service initialized');
+      console.log('✅ LC3 Service initialized');
     } catch (error) {
-      logger.error('❌ Failed to initialize LC3 Service:', error);
+      console.error('❌ Failed to initialize LC3 Service:', error);
       throw error;
     }
   }
@@ -127,7 +126,7 @@ export class LC3Service {
       
       return outputBuffer;
     } catch (error) {
-      logger.error('❌ Error decoding LC3 audio:', error);
+      console.error('❌ Error decoding LC3 audio:', error);
       return null;
     } finally {
       // Release references to input data to help GC
@@ -147,7 +146,7 @@ export class LC3Service {
         
         // Log memory usage before clearing references
         if (global.gc) {
-          logger.info('🧹 Running garbage collection for LC3Service cleanup');
+          console.log('🧹 Running garbage collection for LC3Service cleanup');
           global.gc();
         }
       }
