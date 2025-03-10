@@ -63,7 +63,6 @@ const AppSettings: React.FC<AppSettingsProps> = ({ route, isDarkTheme, toggleThe
       
       BackendServerComms.getInstance().stopApp(appInfo?.packageName)
         .catch(error => {
-          console.error(`Error stopping app:`, error);
           // Revert optimistic state on error
           setOptimisticRunning(isCurrentlyRunning);
           
@@ -80,7 +79,6 @@ const AppSettings: React.FC<AppSettingsProps> = ({ route, isDarkTheme, toggleThe
       
       BackendServerComms.getInstance().startApp(appInfo?.packageName)
         .catch(error => {
-          console.error(`Error starting app:`, error);
           // Revert optimistic state on error
           setOptimisticRunning(isCurrentlyRunning);
           

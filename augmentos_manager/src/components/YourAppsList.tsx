@@ -46,7 +46,6 @@ const YourAppsList: React.FC<YourAppsListProps> = ({ isDarkTheme }) => {
         // Fire and forget - don't await the result
         BackendServerComms.getInstance().startApp(packageName)
             .catch(error => {
-                console.error('start app error:', error);
                 // Revert optimistic update on error
                 setOptimisticRunningApps(prev => prev.filter(name => name !== packageName));
                 // Emit app stopped on error

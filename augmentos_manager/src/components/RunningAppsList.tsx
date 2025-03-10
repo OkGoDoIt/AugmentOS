@@ -64,7 +64,6 @@ const RunningAppsList: React.FC<RunningAppsListProps> = ({isDarkTheme}) => {
     // Fire and forget - don't wait for the response
     BackendServerComms.getInstance().stopApp(packageName)
       .catch(error => {
-        console.error('Stop app error:', error);
         // Revert optimistic update on error
         setOptimisticStoppedApps(prev => prev.filter(name => name !== packageName));
         
