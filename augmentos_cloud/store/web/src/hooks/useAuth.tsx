@@ -10,7 +10,6 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  isWebViewAuth: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -22,7 +21,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isWebViewAuth, setIsWebViewAuth] = useState(false);
 
   // Set up axios authorization with Supabase token
   const setupAxiosAuth = (token: string | null) => {
@@ -52,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Create a minimal session object for our state
           setSession({ access_token: webViewToken } as Session);
           setUser({ id: 'webview-user' } as User);
-          setIsWebViewAuth(true);
           setIsLoading(false);
           return;
         }
@@ -79,7 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setupAxiosAuth(token);
       setSession({ access_token: token } as Session);
       setUser({ id: 'webview-user' } as User);
-      setIsWebViewAuth(true);
     };
 
     // Set up auth state change listener
@@ -113,7 +109,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isLoading,
       isAuthenticated,
-      isWebViewAuth,
       signOut
     }}>
       {children}
