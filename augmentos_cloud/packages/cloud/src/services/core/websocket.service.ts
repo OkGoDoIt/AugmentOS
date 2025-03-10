@@ -484,9 +484,7 @@ export class WebSocketService {
       try {
         // console.log('####### message', message);
         // console.log('####### isBinary', isBinary);
-
-        if (isBinary && Buffer.isBuffer(message)) {
-
+        if (Buffer.isBuffer(message) && isBinary) {
           // Convert Node.js Buffer to ArrayBuffer
           const arrayBuf: ArrayBufferLike = message.buffer.slice(
             message.byteOffset,
@@ -505,6 +503,7 @@ export class WebSocketService {
         // console.log('####### message', message);
 
         const parsedMessage = JSON.parse(message.toString()) as GlassesToCloudMessage;
+        // console.log('####### userSession', userSession);
         await this.handleGlassesMessage(userSession, ws, parsedMessage);
       } catch (error) {
         userSession.logger.error(`Error handling glasses message:`, error);
