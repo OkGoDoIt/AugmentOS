@@ -7,9 +7,11 @@ services:
     volumes:
       - ./:/app
       - /app/node_modules
+      - bun_cache:/root/.bun
     command: >
       bash -c "bun install && 
               cd packages/utils && bun run build &&
+              cd ../config && bun run build &&
               cd ../sdk && bun run build &&
               cd ../agents && bun run build"
     networks:
@@ -43,6 +45,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
     command: bash -c "bun install && cd packages/cloud && bun run dev"
     networks:
       - augmentos-network-dev
@@ -70,6 +73,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
       - ./logs:/app/logs
     command: bash -c "bun install && cd packages/apps/livecaptions && bun run dev"
     networks:
@@ -99,6 +103,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
       - ./logs:/app/logs
     command: bash -c "bun install && cd packages/apps/flash && bun run dev"
     networks:
@@ -128,6 +133,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
       - ./logs:/app/logs
     command: bash -c "bun install && cd packages/apps/dashboard-manager && bun run dev"
     networks:
@@ -157,6 +163,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
       - ./logs:/app/logs
     command: bash -c "bun install && cd packages/apps/notify && bun run dev"
     networks:
@@ -186,6 +193,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
       - ./logs:/app/logs
     command: bash -c "bun install && cd packages/apps/miraai && bun run dev"
     networks:
@@ -214,6 +222,7 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+      - bun_cache:/root/.bun
       - ./logs:/app/logs
     command: bash -c "bun install && cd packages/apps/livetranslation && bun run dev"
     networks:
@@ -223,6 +232,37 @@ services:
       - cloud
     labels:
       com.datadoghq.ad.logs: '[{"source": "live-translation", "service": "live-translation"}]'
+
+  # appstore:
+  #   stop_grace_period: 10s
+  #   init: true
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '0.5'
+  #         memory: 0.5G
+  #       reservations:
+  #         memory: 256M
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8042:80"
+  #   environment:
+  #     - NODE_ENV=development
+  #     - HOST=0.0.0.0
+  #     - SERVICE_NAME=appstore
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./:/app
+  #     - node_modules:/app/node_modules
+  #   command: bash -c "cd store/server && bun install && bun run dev"
+  #   networks:
+  #     - augmentos-network-dev
+  #   labels:
+  #     com.datadoghq.ad.logs: '[{"source": "cloud", "service": "cloud"}]'
 
   # Datadog agent
   datadog:
@@ -256,6 +296,9 @@ services:
 networks:
   augmentos-network-dev:
     driver: bridge
+    external: true
+    name: augmentos-network-dev
 
 volumes:
   node_modules:
+  bun_cache:
