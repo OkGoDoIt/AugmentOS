@@ -42,7 +42,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       setIsLoading(true);
       try {
-        // Get current session
+        // Check for WebView injected Supabase token first
+        const webViewToken = localStorage.getItem('supabase_token');
+        if (webViewToken) {
+          console.log('Using WebView injected Supabase token');
+          setupAxiosAuth(webViewToken);
+          // Create a minimal session object for our state
+          setSession({ access_token: webViewToken } as Session);
+          setUser({ id: 'webview-user' } as User);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Fall back to Supabase auth
         const { data } = await supabase.auth.getSession();
         setSession(data.session);
         setUser(data.session?.user || null);
@@ -57,6 +69,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initializeAuth();
+    
+    // Create global function for WebView token updates
+    window.setSupabaseToken = (token: string) => {
+      console.log('Token received from WebView');
+      setupAxiosAuth(token);
+      setSession({ access_token: token } as Session);
+      setUser({ id: 'webview-user' } as User);
+    };
 
     // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

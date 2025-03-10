@@ -485,7 +485,7 @@ export class WebSocketService {
         // console.log('####### message', message);
         // console.log('####### isBinary', isBinary);
 
-        if (Buffer.isBuffer(message)) {
+        if (isBinary && Buffer.isBuffer(message)) {
 
           // Convert Node.js Buffer to ArrayBuffer
           const arrayBuf: ArrayBufferLike = message.buffer.slice(
