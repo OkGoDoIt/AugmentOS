@@ -22,7 +22,7 @@ import sessionService, { SessionService } from './session.service';
 import subscriptionService, { SubscriptionService } from './subscription.service';
 import transcriptionService, { TranscriptionService } from '../processing/transcription.service';
 import appService, { AppService } from './app.service';
-import { AppStateChange, AuthError, CloudToGlassesMessage, CloudToGlassesMessageType, CloudToTpaMessage, CloudToTpaMessageType, ConnectionAck, ConnectionError, ConnectionInit, DataStream, DisplayRequest, ExtendedStreamType, GlassesConnectionState, GlassesToCloudMessage, GlassesToCloudMessageType, HeadPosition, LocationUpdate, MicrophoneStateChange, StartApp, StopApp, StreamType, TpaConnectionAck, TpaConnectionError, TpaConnectionInit, TpaSubscriptionUpdate, TpaToCloudMessage, UserSession, Vad } from '@augmentos/sdk';
+import { AppStateChange, AuthError, CalendarEvent, CloudToGlassesMessage, CloudToGlassesMessageType, CloudToTpaMessage, CloudToTpaMessageType, ConnectionAck, ConnectionError, ConnectionInit, DataStream, DisplayRequest, ExtendedStreamType, GlassesConnectionState, GlassesToCloudMessage, GlassesToCloudMessageType, HeadPosition, LocationUpdate, MicrophoneStateChange, StartApp, StopApp, StreamType, TpaConnectionAck, TpaConnectionError, TpaConnectionInit, TpaSubscriptionUpdate, TpaToCloudMessage, UserSession, Vad } from '@augmentos/sdk';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { PosthogService } from '../logging/posthog.service';
 import { systemApps } from '@augmentos/config';
@@ -398,7 +398,7 @@ export class WebSocketService {
     subscribedApps.forEach(packageName => {
       const tpaSessionId = `${userSession.sessionId}-${packageName}`;
       const websocket = userSession.appConnections.get(packageName);
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
+      if (websocket && websocket.readyState === 1) {
         // CloudDataStreamMessage
         const dataStream: DataStream = {
           type: CloudToTpaMessageType.DATA_STREAM,
@@ -422,7 +422,7 @@ export class WebSocketService {
       const tpaSessionId = `${userSession.sessionId}-${packageName}`;
       const websocket = userSession.appConnections.get(packageName);
 
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
+      if (websocket && websocket.readyState === 1) {
         // CloudDataStreamMessage
         // const streamMessage: DataStream = {
         //   type: CloudToTpaMessageType.DATA_STREAM,
@@ -816,6 +816,14 @@ export class WebSocketService {
           this.broadcastToTpa(userSession.sessionId, message.type as any, message as any);
           console.warn(`[Session ${userSession.sessionId}] Catching and Sending message type:`, message.type);
           // userSession.location = locationUpdate.location;
+          break;
+        }
+
+        case GlassesToCloudMessageType.CALENDAR_EVENT: {
+          const calendarEvent = message as CalendarEvent;
+          console.log('Calendar event:', calendarEvent);
+
+          this.broadcastToTpa(userSession.sessionId, message.type as any, message as any);
           break;
         }
 
