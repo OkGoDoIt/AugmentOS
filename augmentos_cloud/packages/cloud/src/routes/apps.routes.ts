@@ -1,84 +1,13 @@
 // cloud/src/routes/apps.routes.ts
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import webSocketService from '../services/core/websocket.service';
 import sessionService from '../services/core/session.service';
 import appService from '../services/core/app.service';
 import { User } from '../models/user.model';
-import jwt, { JwtPayload } from 'jsonwebtoken';
 
 export const CLOUD_VERSION = process.env.CLOUD_VERSION;
 if (!CLOUD_VERSION) {
   console.error('CLOUD_VERSION is not set');
-}
-
-const AUGMENTOS_AUTH_JWT_SECRET = process.env.AUGMENTOS_AUTH_JWT_SECRET || "";
-
-/**
- * Helper function to get the active session for a user from their coreToken
- * @param coreToken JWT token from authentication
- * @returns The user's active session or null if not found
- */
-async function getSessionFromToken(coreToken: string) {
-  try {
-    // Verify and decode the token
-    const userData = jwt.verify(coreToken, AUGMENTOS_AUTH_JWT_SECRET);
-    const userId = (userData as JwtPayload).email;
-    
-    if (!userId) {
-      return null;
-    }
-    
-    // Find the active session for this user
-    const userSessions = sessionService.getSessionsForUser(userId);
-    
-    // Get the most recent active session for this user
-    // We could add more sophisticated logic here if needed (e.g., device ID matching)
-    if (userSessions && userSessions.length > 0) {
-      return userSessions[0]; // Return the first active session
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error verifying token or finding session:', error);
-    return null;
-  }
-}
-
-/**
- * Middleware to extract session from Authorization header
- * Falls back to sessionId in body if Authorization header is not present
- */
-async function sessionAuthMiddleware(req: Request, res: Response, next: NextFunction) {
-  // Check for Authorization header
-  const authHeader = req.headers.authorization;
-  
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-    const session = await getSessionFromToken(token);
-    
-    if (session) {
-      // Add session to request object for route handlers
-      (req as any).userSession = session;
-      next();
-      return;
-    }
-  }
-  
-  // Fall back to sessionId in body
-  if (req.body && req.body.sessionId) {
-    const session = sessionService.getSession(req.body.sessionId);
-    if (session) {
-      (req as any).userSession = session;
-      next();
-      return;
-    }
-  }
-  
-  // No valid session found
-  res.status(401).json({
-    success: false,
-    message: 'No valid session. Please provide valid Authorization Bearer token or sessionId.'
-  });
 }
 
 const router = express.Router();
@@ -96,9 +25,9 @@ async function getAllApps(req: Request, res: Response) {
     });
   } catch (error) {
     console.error('Error fetching apps:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Error fetching apps' 
+      message: 'Error fetching apps'
     });
   }
 }
@@ -115,9 +44,9 @@ async function getPublicApps(req: Request, res: Response) {
     });
   } catch (error) {
     console.error('Error fetching public apps:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Error fetching public apps' 
+      message: 'Error fetching public apps'
     });
   }
 }
@@ -136,7 +65,7 @@ async function searchApps(req: Request, res: Response) {
     }
 
     const apps = await appService.getAllApps();
-    const searchResults = apps.filter(app => 
+    const searchResults = apps.filter(app =>
       app.name.toLowerCase().includes(query.toLowerCase()) ||
       (app.description && app.description.toLowerCase().includes(query.toLowerCase()))
     );
@@ -161,7 +90,7 @@ async function getAppByPackage(req: Request, res: Response) {
   try {
     const { packageName } = req.params;
     const app = await appService.getApp(packageName);
-    
+
     if (!app) {
       return res.status(404).json({
         success: false,
@@ -187,9 +116,16 @@ async function getAppByPackage(req: Request, res: Response) {
  */
 async function startApp(req: Request, res: Response) {
   const { packageName } = req.params;
-  const session = (req as any).userSession; // Get session from middleware
+  const { sessionId } = req.body;
 
   try {
+    const session = sessionService.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
 
     const app = await appService.getApp(packageName);
     if (!app) {
@@ -199,31 +135,13 @@ async function startApp(req: Request, res: Response) {
       });
     }
 
-    // Call WebSocket service to start the app
     const tpaSessionId = await webSocketService.startAppSession(session, packageName);
-    
-    // Ensure the app is in activeAppSessions
-    if (!session.activeAppSessions.includes(packageName)) {
-      session.activeAppSessions.push(packageName);
-    }
+    session.activeAppSessions.push(tpaSessionId);
 
-    // Generate app state change to return
-    const appStateChange = await webSocketService.generateAppStateStatus(session);
-
-    // Return both basic success info and the full app state
     res.json({
       success: true,
-      data: { 
-        status: 'initiated', 
-        tpaSessionId,
-        appState: appStateChange 
-      }
+      data: { status: 'initiated', tpaSessionId }
     });
-
-    // If the session has a websocket connection, also send the update there
-    if (session.websocket && session.websocket.readyState === 1) {
-      session.websocket.send(JSON.stringify(appStateChange));
-    }
   } catch (error) {
     console.error(`Error starting app ${packageName}:`, error);
     res.status(500).json({
@@ -238,9 +156,16 @@ async function startApp(req: Request, res: Response) {
  */
 async function stopApp(req: Request, res: Response) {
   const { packageName } = req.params;
-  const session = (req as any).userSession; // Get session from middleware
+  const { sessionId } = req.body;
 
   try {
+    const session = sessionService.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
 
     const app = await appService.getApp(packageName);
     if (!app) {
@@ -250,26 +175,14 @@ async function stopApp(req: Request, res: Response) {
       });
     }
 
-    // Call WebSocket service to stop the app with all the proper cleanup
-    await webSocketService.stopAppSession(session, packageName);
+    session.activeAppSessions = session.activeAppSessions.filter(
+      (appSession) => appSession !== packageName
+    );
 
-    // Generate app state change to return
-    const appStateChange = await webSocketService.generateAppStateStatus(session);
-
-    // Return both basic success info and the full app state
     res.json({
       success: true,
-      data: { 
-        status: 'stopped', 
-        packageName,
-        appState: appStateChange 
-      }
+      data: { status: 'stopped', packageName }
     });
-
-    // If the session has a websocket connection, also send the update there
-    if (session.websocket && session.websocket.readyState === 1) {
-      session.websocket.send(JSON.stringify(appStateChange));
-    }
   } catch (error) {
     console.error(`Error stopping app ${packageName}:`, error);
     res.status(500).json({
@@ -297,9 +210,9 @@ async function installApp(req: Request, res: Response) {
   try {
     // Find or create user
     const user = await User.findOrCreateUser(email);
-    
+
     // Get app details
-    const app = await appService.getApp(packageName);
+    const app = await appService.findFromAppStore(packageName);
     if (!app) {
       return res.status(404).json({
         success: false,
@@ -319,7 +232,7 @@ async function installApp(req: Request, res: Response) {
     if (!user.installedApps) {
       user.installedApps = [];
     }
-    
+
     user.installedApps.push({
       packageName,
       installedDate: new Date()
@@ -331,6 +244,15 @@ async function installApp(req: Request, res: Response) {
       success: true,
       message: `App ${packageName} installed successfully`
     });
+
+    // Trigger AppStateChange for session.
+    try {
+      sessionService.triggerAppStateChange(user.email);
+    }
+    catch (error) {
+      // Fails if the user has no active sessions, or if websocket is not connected.
+      console.error('Error triggering app state change:', error);
+    }
   } catch (error) {
     console.error('Error installing app:', error);
     res.status(500).json({
@@ -382,6 +304,14 @@ async function uninstallApp(req: Request, res: Response) {
       success: true,
       message: `App ${packageName} uninstalled successfully`
     });
+    // Trigger AppStateChange for session.
+    try {
+      sessionService.triggerAppStateChange(user.email);
+    }
+    catch (error) {
+      // Fails if the user has no active sessions, or if websocket is not connected.
+      console.error('Error triggering app state change:', error);
+    }
   } catch (error) {
     console.error('Error uninstalling app:', error);
     res.status(500).json({
@@ -452,8 +382,8 @@ router.get('/install/:packageName/:email', installApp);
 router.get('/uninstall/:packageName/:email', uninstallApp);
 
 router.get('/:packageName', getAppByPackage);
-router.post('/:packageName/start', sessionAuthMiddleware, startApp);
-router.post('/:packageName/stop', sessionAuthMiddleware, stopApp);
+router.post('/:packageName/start', startApp);
+router.post('/:packageName/stop', stopApp);
 
 
 // TODO(isaiah): Add supabase auth middleare to routes that require it.
