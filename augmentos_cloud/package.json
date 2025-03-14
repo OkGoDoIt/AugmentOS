@@ -13,9 +13,9 @@
     "dev:stop": "docker-compose -f docker-compose.dev.yml -p dev down --timeout 5 || docker kill $(docker ps -q)",
     "dev:setup-network": "docker network create augmentos-network-dev",
 
-    "ngrok:isaiah": "ngrok http --url=isaiah.augmentos.cloud 8002",
-    "dev:ngrok:isaiah": "ngrok http --url=isaiah.augmentos.cloud host.docker.internal:8002",
-    "dev:ngrok:appstore": "ngrok http --domain=appstore.augmentos.cloud host.docker.internal:8042",
+    "ngrok:dev": "ngrok http --url=isaiah.augmentos.cloud 8002",
+    "ngrok:appstore": "ngrok http --domain=appstore.augmentos.cloud 8042",
+    "docker:ngrok:dev": "ngrok http --url=isaiah.augmentos.cloud host.docker.internal:8002",
 
     "staging": "docker-compose -f docker-compose.staging.yml -p staging up -d",
     "staging:stop": "docker-compose -f docker-compose.staging.yml -p staging down",
@@ -37,7 +37,9 @@
     "logs:prod:cloud": "docker-compose -f docker-compose.yml -p prod logs -f cloud",
 
     "docker:setup-links": "docker-compose -f docker-compose.dev.yml up --no-deps setup",
-    "local:setup-links": "cd packages/utils && bun link && cd ../sdk && bun link && cd ../config && bun link && cd ../agents && bun link && cd ../cloud && bun link @augmentos/utils @augmentos/sdk @augmentos/config @augmentos/agents && for app in dashboard-manager flash isaiah live-captions live-translation miraai notify; do cd ../apps/$app && bun link @augmentos/utils @augmentos/sdk @augmentos/config @augmentos/agents; done"
+    "local:setup-links": "cd packages/utils && bun link && cd ../sdk && bun link && cd ../config && bun link && cd ../agents && bun link && cd ../cloud && bun link @augmentos/utils @augmentos/sdk @augmentos/config @augmentos/agents && for app in dashboard-manager flash isaiah live-captions live-translation miraai notify; do cd ../apps/$app && bun link @augmentos/utils @augmentos/sdk @augmentos/config @augmentos/agents; done",
+    "local:appstore-web": "cd store/web/ && bun install && bun run dev",
+    "local:developer-portal": "packages/developer-portal && bun install && bun run dev"
   },
 
   "dependencies": {

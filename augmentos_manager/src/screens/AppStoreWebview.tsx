@@ -32,7 +32,7 @@ const AppStoreWeb: React.FC<AppStoreWebProps> = ({ isDarkTheme }) => {
   };
 
   // Get the app store URL from environment variable or use a fallback
-  const appStoreUrl = Config.AUGMENTOS_APPSTORE_URL || 'https://store.augmentos.org/webview';
+  const appStoreUrl = Config.AUGMENTOS_APPSTORE_URL || 'https://appstore.augmentos.dev/webview';
   const webViewRef = useRef(null);
 
   // Handle WebView loading events
