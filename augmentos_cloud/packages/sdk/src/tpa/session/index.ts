@@ -119,7 +119,7 @@ export class TpaSession {
       ...config
     };
 
-    this.events = new EventManager(this.subscribe.bind(this));
+    this.events = new EventManager(this.subscribe.bind(this), this.unsubscribe.bind(this));
     this.layouts = new LayoutManager(
       config.packageName,
       this.send.bind(this)
@@ -176,6 +176,17 @@ export class TpaSession {
    */
   subscribe(type: ExtendedStreamType): void {
     this.subscriptions.add(type);
+    if (this.ws?.readyState === 1) {
+      this.updateSubscriptions();
+    }
+  }
+
+  /**
+   * 📭 Unsubscribe from a specific event stream
+   * @param type - Type of event to unsubscribe from
+   */
+  unsubscribe(type: ExtendedStreamType): void {
+    this.subscriptions.delete(type);
     if (this.ws?.readyState === 1) {
       this.updateSubscriptions();
     }

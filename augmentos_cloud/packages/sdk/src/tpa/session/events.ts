@@ -82,7 +82,7 @@ export class EventManager {
   private emitter: EventEmitter;
   private handlers: Map<EventType, Set<Handler<unknown>>>;
 
-  constructor(private subscribe: (type: ExtendedStreamType) => void) {
+  constructor(private subscribe: (type: ExtendedStreamType) => void, private unsubscribe: (type: ExtendedStreamType) => void) {
     this.emitter = new EventEmitter();
     this.handlers = new Map();
   }
@@ -102,7 +102,6 @@ export class EventManager {
    */
   onTranscriptionForLanguage(language: string, handler: Handler<TranscriptionData>) {
     const streamType = createTranscriptionStream(language);
-    // console.log("streamType@", streamType)
     return this.addHandler(streamType, handler);
   }
 
@@ -202,17 +201,12 @@ export class EventManager {
     handler: Handler<EventData<T>>
   ): () => void {
     const handlers = this.handlers.get(type) ?? new Set();
-    console.log("####", this.handlers)
-    console.log("00000 handlers", handlers);
-    console.log("00000 type", type);
     if (handlers.size === 0) {
       this.handlers.set(type, handlers);
       this.subscribe(type);
     }
 
     handlers.add(handler as Handler<unknown>);
-    console.log("111 handlers", handlers);
-    console.log("111 thishandlers", this.handlers);
     return () => this.removeHandler(type, handler);
   }
 
@@ -229,6 +223,7 @@ export class EventManager {
     handlers.delete(handler as Handler<unknown>);
     if (handlers.size === 0) {
       this.handlers.delete(type);
+      this.unsubscribe(type);
     }
   }
 
@@ -236,20 +231,12 @@ export class EventManager {
    * 📡 Emit an event to all registered handlers
    */
   emit<T extends EventType>(eventType: T, data: EventData<T>): void {
-    console.log("emitting event", eventType, data);
-
     // Emit to EventEmitter handlers (system events)
     this.emitter.emit(eventType, data);
-
-    // const handlerTypeKey = getBaseStreamType(event);
-
-    // console.log("3333 handlerTypeKey", handlerTypeKey)
-    console.log("3333 event", eventType, this.handlers)
 
     // Emit to stream handlers if applicable
     const handlers = this.handlers.get(eventType);
 
-    console.log("2222 handlers", handlers)
     if (handlers) {
       handlers.forEach(handler => {
         (handler as Handler<EventData<T>>)(data);
