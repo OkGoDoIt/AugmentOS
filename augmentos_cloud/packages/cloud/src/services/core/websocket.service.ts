@@ -14,11 +14,10 @@
  * wsService.setupWebSocketServers(httpServer);
  */
 
-
 // import { WebSocketServer, WebSocket } from 'ws';
 import WebSocket from 'ws';
 import { IncomingMessage, Server } from 'http';
-import sessionService, { ExtendedUserSession, SequencedAudioChunk } from './session.service';
+import sessionService, { ExtendedUserSession, IS_LC3, SequencedAudioChunk } from './session.service';
 import subscriptionService from './subscription.service';
 import transcriptionService from '../processing/transcription.service';
 import appService from './app.service';
@@ -49,6 +48,7 @@ import {
   TpaConnectionInit,
   TpaSubscriptionUpdate,
   TpaToCloudMessage,
+  TpaType,
   UserSession,
   Vad,
   WebhookRequestType
@@ -61,13 +61,26 @@ import { User } from '../../models/user.model';
 import { logger } from '@augmentos/utils';
 import tpaRegistrationService from './tpa-registration.service';
 import healthMonitorService from './health-monitor.service';
+import axios from 'axios';
 
-export const PUBLIC_HOST_NAME = process.env.PUBLIC_HOST_NAME || "dev.augmentos.cloud";
-export let LOCAL_HOST_NAME = process.env.CLOUD_HOST_NAME || process.env.PORTER_APP_NAME ? `${process.env.PORTER_APP_NAME}-cloud.default.svc.cluster.local:80` : "cloud"
+export const CLOUD_PUBLIC_HOST_NAME = process.env.CLOUD_PUBLIC_HOST_NAME; // e.g., "prod.augmentos.cloud"
+export const CLOUD_LOCAL_HOST_NAME = process.env.CLOUD_LOCAL_HOST_NAME; // e.g., "localhost:8002" | "cloud" | "cloud-debug-cloud.default.svc.cluster.local:80"
 export const AUGMENTOS_AUTH_JWT_SECRET = process.env.AUGMENTOS_AUTH_JWT_SECRET || "";
 
-logger.info(`🔥🔥🔥 [websocket.service]: PUBLIC_HOST_NAME: ${PUBLIC_HOST_NAME}`);
-logger.info(`🔥🔥🔥 [websocket.service]: LOCAL_HOST_NAME: ${LOCAL_HOST_NAME}`);
+if (!CLOUD_PUBLIC_HOST_NAME) {
+  logger.error("CLOUD_PUBLIC_HOST_NAME is not set. Please set it in your environment variables.");
+}
+
+if (!CLOUD_LOCAL_HOST_NAME) {
+  logger.error("CLOUD_LOCAL_HOST_NAME is not set. Please set it in your environment variables.");
+}
+
+if (!AUGMENTOS_AUTH_JWT_SECRET) {
+  logger.error("AUGMENTOS_AUTH_JWT_SECRET is not set. Please set it in your environment variables.");
+}
+
+logger.info(`🔥🔥🔥 [websocket.service]: CLOUD_PUBLIC_HOST_NAME: ${CLOUD_PUBLIC_HOST_NAME}`);
+logger.info(`🔥🔥🔥 [websocket.service]: CLOUD_LOCAL_HOST_NAME: ${CLOUD_LOCAL_HOST_NAME}`);
 
 const WebSocketServer = WebSocket.Server || WebSocket.WebSocketServer;
 
@@ -96,137 +109,137 @@ export class WebSocketService {
    * @param userSession User session to add the chunk to
    * @param chunk Audio chunk with sequence information
    */
-  private addToAudioBuffer(userSession: ExtendedUserSession, chunk: SequencedAudioChunk): void {
-    // Ensure the audio buffer exists
-    if (!userSession.audioBuffer) {
-      userSession.logger.warn("Audio buffer not initialized, creating one now");
-      userSession.audioBuffer = {
-        chunks: [],
-        lastProcessedSequence: -1,
-        processingInProgress: false,
-        expectedNextSequence: 0,
-        bufferSizeLimit: 100,
-        bufferTimeWindowMs: 500,
-        bufferProcessingInterval: setInterval(() =>
-          this.processAudioBuffer(userSession), 100)
-      };
-    }
+  // private addToAudioBuffer(userSession: ExtendedUserSession, chunk: SequencedAudioChunk): void {
+  //   // Ensure the audio buffer exists
+  //   if (!userSession.audioBuffer) {
+  //     userSession.logger.warn("Audio buffer not initialized, creating one now");
+  //     userSession.audioBuffer = {
+  //       chunks: [],
+  //       lastProcessedSequence: -1,
+  //       processingInProgress: false,
+  //       expectedNextSequence: 0,
+  //       bufferSizeLimit: 100,
+  //       bufferTimeWindowMs: 500,
+  //       bufferProcessingInterval: setInterval(() =>
+  //         this.processAudioBuffer(userSession), 100)
+  //     };
+  //   }
 
-    // Update expected next sequence
-    userSession.audioBuffer.expectedNextSequence =
-      Math.max(userSession.audioBuffer.expectedNextSequence, chunk.sequenceNumber + 1);
+  //   // Update expected next sequence
+  //   userSession.audioBuffer.expectedNextSequence =
+  //     Math.max(userSession.audioBuffer.expectedNextSequence, chunk.sequenceNumber + 1);
 
-    // Insert chunk in correct position to maintain sorted order
-    const index = userSession.audioBuffer.chunks.findIndex(
-      c => c.sequenceNumber > chunk.sequenceNumber
-    );
+  //   // Insert chunk in correct position to maintain sorted order
+  //   const index = userSession.audioBuffer.chunks.findIndex(
+  //     c => c.sequenceNumber > chunk.sequenceNumber
+  //   );
 
-    if (index === -1) {
-      userSession.audioBuffer.chunks.push(chunk);
-    } else {
-      userSession.audioBuffer.chunks.splice(index, 0, chunk);
-    }
+  //   if (index === -1) {
+  //     userSession.audioBuffer.chunks.push(chunk);
+  //   } else {
+  //     userSession.audioBuffer.chunks.splice(index, 0, chunk);
+  //   }
 
-    // Enforce buffer size limit
-    if (userSession.audioBuffer.chunks.length > userSession.audioBuffer.bufferSizeLimit) {
-      const droppedCount = userSession.audioBuffer.chunks.length - userSession.audioBuffer.bufferSizeLimit;
+  //   // Enforce buffer size limit
+  //   if (userSession.audioBuffer.chunks.length > userSession.audioBuffer.bufferSizeLimit) {
+  //     const droppedCount = userSession.audioBuffer.chunks.length - userSession.audioBuffer.bufferSizeLimit;
 
-      // Remove oldest chunks beyond the limit
-      userSession.audioBuffer.chunks = userSession.audioBuffer.chunks.slice(
-        userSession.audioBuffer.chunks.length - userSession.audioBuffer.bufferSizeLimit
-      );
+  //     // Remove oldest chunks beyond the limit
+  //     userSession.audioBuffer.chunks = userSession.audioBuffer.chunks.slice(
+  //       userSession.audioBuffer.chunks.length - userSession.audioBuffer.bufferSizeLimit
+  //     );
 
-      userSession.logger.warn(
-        `Audio buffer exceeded limit. Dropped ${droppedCount} oldest chunks. Buffer now has ${userSession.audioBuffer.chunks.length} chunks.`
-      );
-    }
-  }
+  //     userSession.logger.warn(
+  //       `Audio buffer exceeded limit. Dropped ${droppedCount} oldest chunks. Buffer now has ${userSession.audioBuffer.chunks.length} chunks.`
+  //     );
+  //   }
+  // }
 
   /**
    * Process audio chunks in sequence from the buffer
    * @param userSession User session whose audio buffer to process
    */
-  private async processAudioBuffer(userSession: ExtendedUserSession): Promise<void> {
-    // Skip if no buffer, no chunks, or already processing
-    if (!userSession.audioBuffer ||
-      userSession.audioBuffer.chunks.length === 0 ||
-      userSession.audioBuffer.processingInProgress) {
-      return;
-    }
+  // private async processAudioBuffer(userSession: ExtendedUserSession): Promise<void> {
+  //   // Skip if no buffer, no chunks, or already processing
+  //   if (!userSession.audioBuffer ||
+  //     userSession.audioBuffer.chunks.length === 0 ||
+  //     userSession.audioBuffer.processingInProgress) {
+  //     return;
+  //   }
 
-    // Set processing flag to prevent concurrent processing
-    userSession.audioBuffer.processingInProgress = true;
+  //   // Set processing flag to prevent concurrent processing
+  //   userSession.audioBuffer.processingInProgress = true;
 
-    try {
-      const now = Date.now();
-      const chunks = userSession.audioBuffer.chunks;
+  //   try {
+  //     const now = Date.now();
+  //     const chunks = userSession.audioBuffer.chunks;
 
-      // Only proceed if we have chunks to process
-      if (chunks.length > 0) {
-        const oldestChunkTime = chunks[0].receivedAt;
-        const bufferTimeElapsed = now - oldestChunkTime > userSession.audioBuffer.bufferTimeWindowMs;
+  //     // Only proceed if we have chunks to process
+  //     if (chunks.length > 0) {
+  //       const oldestChunkTime = chunks[0].receivedAt;
+  //       const bufferTimeElapsed = now - oldestChunkTime > userSession.audioBuffer.bufferTimeWindowMs;
 
-        // Only process if we have accumulated enough time or have enough chunks
-        if (bufferTimeElapsed || chunks.length >= 5) {
-          // Sort by sequence number (should already be mostly sorted)
-          chunks.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+  //       // Only process if we have accumulated enough time or have enough chunks
+  //       if (bufferTimeElapsed || chunks.length >= 5) {
+  //         // Sort by sequence number (should already be mostly sorted)
+  //         chunks.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
-          // Process chunks in sequence until we find a gap or reach the end
-          while (chunks.length > 0) {
-            const nextChunk = chunks[0];
+  //         // Process chunks in sequence until we find a gap or reach the end
+  //         while (chunks.length > 0) {
+  //           const nextChunk = chunks[0];
 
-            // Check if this is the next expected chunk or we've waited long enough
-            const isNextInSequence = nextChunk.sequenceNumber ===
-              userSession.audioBuffer.lastProcessedSequence + 1;
-            const hasWaitedLongEnough = now - nextChunk.receivedAt >
-              userSession.audioBuffer.bufferTimeWindowMs;
+  //           // Check if this is the next expected chunk or we've waited long enough
+  //           const isNextInSequence = nextChunk.sequenceNumber ===
+  //             userSession.audioBuffer.lastProcessedSequence + 1;
+  //           const hasWaitedLongEnough = now - nextChunk.receivedAt >
+  //             userSession.audioBuffer.bufferTimeWindowMs;
 
-            if (isNextInSequence || hasWaitedLongEnough) {
-              // Remove from buffer
-              chunks.shift();
+  //           if (isNextInSequence || hasWaitedLongEnough) {
+  //             // Remove from buffer
+  //             chunks.shift();
 
-              // Process the chunk with sequence number
-              const processedData = await sessionService.handleAudioData(
-                userSession,
-                nextChunk.data,
-                nextChunk.isLC3,
-                nextChunk.sequenceNumber  // Pass sequence to track continuity
-              );
+  //             // Process the chunk with sequence number
+  //             const processedData = await sessionService.handleAudioData(
+  //               userSession,
+  //               nextChunk.data,
+  //               nextChunk.isLC3,
+  //               nextChunk.sequenceNumber  // Pass sequence to track continuity
+  //             );
 
-              // Update last processed sequence
-              userSession.audioBuffer.lastProcessedSequence = nextChunk.sequenceNumber;
+  //             // Update last processed sequence
+  //             userSession.audioBuffer.lastProcessedSequence = nextChunk.sequenceNumber;
 
-              // If we have processed audio data, broadcast it to TPAs
-              if (processedData) {
-                this.broadcastToTpaAudio(userSession, processedData);
-              }
-            } else {
-              // Wait for the next chunk in sequence
-              if (LOG_AUDIO) {
-                userSession.logger.debug(
-                  `Waiting for audio chunk ${userSession.audioBuffer.lastProcessedSequence + 1}, ` +
-                  `but next available is ${nextChunk.sequenceNumber}`
-                );
-              }
-              break;
-            }
-          }
+  //             // If we have processed audio data, broadcast it to TPAs
+  //             if (processedData) {
+  //               this.broadcastToTpaAudio(userSession, processedData);
+  //             }
+  //           } else {
+  //             // Wait for the next chunk in sequence
+  //             if (LOG_AUDIO) {
+  //               userSession.logger.debug(
+  //                 `Waiting for audio chunk ${userSession.audioBuffer.lastProcessedSequence + 1}, ` +
+  //                 `but next available is ${nextChunk.sequenceNumber}`
+  //               );
+  //             }
+  //             break;
+  //           }
+  //         }
 
-          // Log buffer status if chunks remain
-          if (chunks.length > 0 && LOG_AUDIO) {
-            userSession.logger.debug(
-              `Audio buffer has ${chunks.length} chunks remaining after processing.`
-            );
-          }
-        }
-      }
-    } catch (error) {
-      userSession.logger.error('Error processing audio buffer:', error);
-    } finally {
-      // Clear processing flag
-      userSession.audioBuffer.processingInProgress = false;
-    }
-  }
+  //         // Log buffer status if chunks remain
+  //         if (chunks.length > 0 && LOG_AUDIO) {
+  //           userSession.logger.debug(
+  //             `Audio buffer has ${chunks.length} chunks remaining after processing.`
+  //           );
+  //         }
+  //       }
+  //     }
+  //   } catch (error) {
+  //     userSession.logger.error('Error processing audio buffer:', error);
+  //   } finally {
+  //     // Clear processing flag
+  //     userSession.audioBuffer.processingInProgress = false;
+  //   }
+  // }
 
   /**
    * 🚀⚡️ Initializes WebSocket servers and sets up connection handling.
@@ -399,6 +412,41 @@ export class WebSocketService {
 
     userSession.logger.info(`[websocket.service]: ⚡️ Loading app ${packageName} for user ${userSession.userId}\n`);
 
+    // If this is a STANDARD app, we need to stop any other STANDARD apps that are running
+    if (app.tpaType === TpaType.STANDARD) {
+      userSession.logger.info(`[websocket.service]: 🚦 Starting STANDARD app, checking for other STANDARD apps to stop`);
+      
+      // Find all active STANDARD apps
+      const runningStandardApps = [];
+      
+      for (const activeAppName of userSession.activeAppSessions) {
+        // Skip if this is the app we're trying to start
+        if (activeAppName === packageName) continue;
+        
+        // Get the app details to check its type
+        try {
+          const activeApp = await appService.getApp(activeAppName);
+          if (activeApp && activeApp.tpaType === TpaType.STANDARD) {
+            runningStandardApps.push(activeAppName);
+          }
+        } catch (error) {
+          userSession.logger.error(`[websocket.service]: Error checking app type for ${activeAppName}:`, error);
+          // Continue with the next app even if there's an error
+        }
+      }
+      
+      // Stop any running STANDARD apps
+      for (const standardAppToStop of runningStandardApps) {
+        userSession.logger.info(`[websocket.service]: 🛑 Stopping STANDARD app ${standardAppToStop} before starting ${packageName}`);
+        try {
+          await this.stopAppSession(userSession, standardAppToStop);
+        } catch (error) {
+          userSession.logger.error(`[websocket.service]: Error stopping STANDARD app ${standardAppToStop}:`, error);
+          // Continue with the next app even if there's an error
+        }
+      }
+    }
+
     // Store pending session.
     userSession.loadingApps.add(packageName);
     userSession.logger.debug(`[websocket.service]: Current Loading Apps:`, userSession.loadingApps);
@@ -433,7 +481,7 @@ export class WebSocketService {
         }
       } else {
         // For non-system apps, use the public host
-        augmentOSWebsocketUrl = `wss://${PUBLIC_HOST_NAME}/tpa-ws`;
+        augmentOSWebsocketUrl = `wss://${CLOUD_PUBLIC_HOST_NAME}/tpa-ws`;
         userSession.logger.info(`Using public URL for app ${packageName}`);
       }
 
@@ -524,15 +572,12 @@ export class WebSocketService {
         (appName) => appName !== packageName
       );
 
-      // Optional: Trigger stop webhook if needed
-      // Uncomment this if you want to implement stop webhook calls
-      /*
       try {
         const tpaSessionId = `${userSession.sessionId}-${packageName}`;
-        await this.appService.triggerStopWebhook(
+        await appService.triggerStopWebhook(
           app.publicUrl,
           {
-            type: 'stop_request',
+            type: WebhookRequestType.STOP_REQUEST,
             sessionId: tpaSessionId,
             userId: userSession.userId,
             reason: 'user_disabled',
@@ -543,7 +588,18 @@ export class WebSocketService {
         userSession.logger.error(`Error calling stop webhook for ${packageName}:`, error);
         // Continue with cleanup even if webhook fails
       }
-      */
+
+      // End the websocket connection for the app
+      try {
+        const websocket = userSession.appConnections.get(packageName);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          websocket.close();
+          userSession.appConnections.delete(packageName);
+        }
+      } catch (error) {
+        userSession.logger.error(`Error ending websocket for TPA ${packageName}:`, error);
+        // Continue with cleanup even if webhook fails
+      }
 
       // Update user's running apps in database
       try {
@@ -721,21 +777,25 @@ export class WebSocketService {
     const userSession = await sessionService.createSession(ws, userId);
 
     // Set up the audio buffer processing interval
-    if (userSession.audioBuffer) {
-      // Clear any existing interval first
-      if (userSession.audioBuffer.bufferProcessingInterval) {
-        clearInterval(userSession.audioBuffer.bufferProcessingInterval);
-      }
+    // if (userSession.audioBuffer) {
+    //   // Clear any existing interval first
+    //   if (userSession.audioBuffer.bufferProcessingInterval) {
+    //     clearInterval(userSession.audioBuffer.bufferProcessingInterval);
+    //   }
 
-      // Create new interval that calls our processAudioBuffer method
-      userSession.audioBuffer.bufferProcessingInterval = setInterval(() => {
-        this.processAudioBuffer(userSession);
-      }, 100); // Process every 100ms
+    //   // Create new interval that calls our processAudioBuffer method
+    //   userSession.audioBuffer.bufferProcessingInterval = setInterval(() => {
+    //     this.processAudioBuffer(userSession);
+    //   }, 100); // Process every 100ms
 
-      userSession.logger.info(`✅ Audio buffer processing interval set up for session ${userSession.sessionId}`);
-    }
+    //   userSession.logger.info(`✅ Audio buffer processing interval set up for session ${userSession.sessionId}`);
+    // }
     ws.on('message', async (message: Buffer | string, isBinary: boolean) => {
       try {
+
+        // console.log("@@@@@: Received message from glasses:", message);
+        // console.log("🔥🔥🔥: isBinary:", isBinary);
+
         // Handle binary messages (typically audio)
         if (Buffer.isBuffer(message) && isBinary) {
           const _buffer = message as Buffer;
@@ -744,34 +804,18 @@ export class WebSocketService {
             _buffer.byteOffset,
             _buffer.byteOffset + _buffer.byteLength
           );
-
-          // Generate a sequence number
-          const sequenceNumber = this.globalAudioSequence++;
-          const now = Date.now();
-
-          // Create a sequenced audio chunk
-          const chunk: SequencedAudioChunk = {
-            sequenceNumber,
-            timestamp: now,
-            data: arrayBuf,
-            isLC3: true, // Assuming LC3 based on global IS_LC3 setting
-            receivedAt: now
-          };
-
-          // Add to the ordered buffer
-          this.addToAudioBuffer(userSession, chunk);
-
-          // Trigger buffer processing
-          // Processing will happen asynchronously via the interval,
-          // but we can also trigger it immediately for responsive feedback
-          this.processAudioBuffer(userSession);
-
+          // Process the audio data
+          const _arrayBuffer = await sessionService.handleAudioData(userSession, arrayBuf);
+          // Send audio chunk to TPAs subscribed to audio_chunk
+          if (_arrayBuffer) {
+            this.broadcastToTpaAudio(userSession, _arrayBuffer);
+          }
           return;
         }
 
         // Update the last activity timestamp for this connection
         healthMonitorService.updateGlassesActivity(ws);
-        console.log("🔥🔥🔥: Received message from glasses:", message);
+        // console.log("🔥🔥🔥: Received message from glasses:", message);
 
         // Handle JSON messages
         const parsedMessage = JSON.parse(message.toString()) as GlassesToCloudMessage;
@@ -1160,6 +1204,7 @@ export class WebSocketService {
                   `🎤 Previous: `, previousLanguageSubscriptions,
                   `🎤 New: `, newLanguageSubscriptions
                 );
+                // console.log("🔥🔥🔥: newLanguageSubscriptions:", newLanguageSubscriptions);
                 // Update transcription streams with new language subscriptions
                 transcriptionService.updateTranscriptionStreams(
                   userSession as any, // Cast to ExtendedUserSession
@@ -1226,6 +1271,7 @@ export class WebSocketService {
     ws.on('ping', () => {
       // Update activity whenever a ping is received
       healthMonitorService.updateTpaActivity(ws);
+      console.log("🔥🔥🔥: Received ping from TPA");
       // Send pong response
       try {
         ws.pong();
@@ -1359,10 +1405,51 @@ export class WebSocketService {
       }
     }
 
-    // Send acknowledgment
+    // Get user settings for this TPA
+    let userSettings = [];
+    try {
+      const user = await User.findOrCreateUser(userSession.userId);
+      userSettings = user.getAppSettings(initMessage.packageName) || [];
+      
+      // If no settings found, try to fetch and create default settings
+      if (!userSettings || userSettings.length === 0) {
+        try {
+          // Try to fetch TPA config to get default settings
+          const app = await appService.getApp(initMessage.packageName);
+          if (app && app.publicUrl) {
+            const tpaConfigResponse = await axios.get(`${app.publicUrl}/tpa_config.json`);
+            const tpaConfig = tpaConfigResponse.data;
+            
+            if (tpaConfig && tpaConfig.settings) {
+              const defaultSettings = tpaConfig.settings
+                .filter((setting: any) => setting.type !== 'group')
+                .map((setting: any) => ({
+                  key: setting.key,
+                  value: setting.defaultValue,
+                  defaultValue: setting.defaultValue,
+                  type: setting.type,
+                  label: setting.label,
+                  options: setting.options || []
+                }));
+                
+              await user.updateAppSettings(initMessage.packageName, defaultSettings);
+              userSettings = defaultSettings;
+              userSession.logger.info(`Created default settings for ${initMessage.packageName}`);
+            }
+          }
+        } catch (error) {
+          userSession.logger.error(`Error fetching TPA config for default settings: ${error}`);
+        }
+      }
+    } catch (error) {
+      userSession.logger.error(`Error retrieving settings for ${initMessage.packageName}: ${error}`);
+    }
+    
+    // Send acknowledgment with settings
     const ackMessage: TpaConnectionAck = {
       type: CloudToTpaMessageType.CONNECTION_ACK,
       sessionId: initMessage.sessionId,
+      settings: userSettings, // Include user settings in the response
       timestamp: new Date()
     };
     ws.send(JSON.stringify(ackMessage));

@@ -882,7 +882,44 @@ bun run lint
 7.  Create a Pull Request against the `main` or appropriate development branch.
 8.  Address any feedback during the code review process.
 
-## License
+## Development Workflow
 
-MIT License. See the [LICENSE](../../LICENSE) file in the root of the repository.
-```
+1. **Work on shared packages (SDK, utils, etc.):**
+   - Make changes to files in `packages/` directory
+   - Run `bun run build` to rebuild
+
+2. **Create/modify a TPA:**
+   - Navigate to TPA directory: `cd packages/apps/<app-name>`
+   - Start development: `bun run dev`
+
+3. **Deploy to staging:**
+   ```bash
+   bun run staging:deploy
+   ```
+
+## Docker Setup
+
+For a comprehensive guide on running AugmentOS Cloud and TPAs in Docker, see [DOCKER_GUIDE.md](./DOCKER_GUIDE.md).
+
+### Docker Tips
+
+- Each service uses a shared node_modules volume to prevent duplicate installations
+- The shared-packages service builds all dependencies first
+- Use Dockerfile.dev for development (more optimized for local development)
+- Use `dev:rebuild` when changing dependencies or Docker configuration
+
+## Documentation
+
+For detailed documentation, see the `/docs` directory:
+
+- **System Overview**: `docs/0. OVERVIEW.md`
+- **Architecture**: `docs/1. SYSTEM-ARCHITECTURE.md`
+- **TPA Session Management**: `docs/2. TPA-SESSION-MANAGEMENT.md`
+- **Developer Guidelines**: `docs/tpa/DISPLAY-GUIDELINES.md`
+
+## Troubleshooting
+
+- **"Failed to link" errors**: Run `bun run dev:clean` to clean up Docker volumes and restart with `bun run dev:rebuild`
+- **Connection issues**: Check network settings with `docker network ls` to verify `augmentos-network-dev` exists
+- **Performance issues**: Adjust resource limits in docker-compose.yml if needed
+
