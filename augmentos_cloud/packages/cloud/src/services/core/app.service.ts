@@ -681,6 +681,131 @@ export class AppService {
     return App.find({ appStoreStatus: 'PUBLISHED' });
   }
 
+  /**
+   * Triggers the TPA command webhook for Mira AI integration
+   * @param packageName - The package name of the TPA to send the command to
+   * @param payload - The command webhook payload containing command details
+   * @returns Promise resolving to the webhook response or error
+   */
+  async triggerTpaCommandWebhook(packageName: string, payload: any): Promise<{
+    status: number;
+    data: any;
+  }> {
+    // Look up the TPA by packageName
+    const app = await this.getApp(packageName);
+    
+    if (!app) {
+      throw new Error(`App ${packageName} not found`);
+    }
+    
+    if (!app.publicUrl) {
+      throw new Error(`App ${packageName} does not have a public URL`);
+    }
+    
+    // Get the app document from MongoDB
+    const appDoc = await App.findOne({ packageName });
+    if (!appDoc) {
+      throw new Error(`App ${packageName} not found in database`);
+    }
+    
+    // For security reasons, we can't retrieve the original API key
+    // Instead, we'll use a special header that identifies this as a system request
+    // The TPA server will need to validate this using the hashedApiKey
+    
+    // Construct the webhook URL from the app's public URL
+    const webhookUrl = `${app.publicUrl}/command`;
+    
+    // Set up retry configuration
+    const maxRetries = 2;
+    const baseDelay = 1000; // 1 second
+    
+    // Attempt to send the webhook with retries
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await axios.post(webhookUrl, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-TPA-API-Key': appDoc.hashedApiKey, // Use the hashed API key for authentication
+          },
+          timeout: 10000 // 10 second timeout
+        });
+        
+        // Return successful response
+        return {
+          status: response.status,
+          data: response.data
+        };
+      } catch (error: unknown) {
+        // If this is the last retry attempt, throw an error
+        if (attempt === maxRetries - 1) {
+          if (axios.isAxiosError(error)) {
+            const axiosError = error as AxiosError;
+            console.error(`Command webhook failed for ${packageName}: ${axiosError.message}`);
+            console.error(`URL: ${webhookUrl}`);
+            console.error(`Response: ${axiosError.response?.data}`);
+            console.error(`Status: ${axiosError.response?.status}`);
+            
+            // Return a standardized error response
+            return {
+              status: axiosError.response?.status || 500,
+              data: {
+                error: true,
+                message: `Webhook failed: ${axiosError.message}`,
+                details: axiosError.response?.data || {}
+              }
+            };
+          } else {
+            // Handle non-Axios errors
+            const genericError = error as Error;
+            return {
+              status: 500,
+              data: {
+                error: true,
+                message: `Webhook failed: ${genericError.message || 'Unknown error'}`
+              }
+            };
+          }
+        }
+        
+        // Exponential backoff before retry
+        await new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
+      }
+    }
+    
+    // This should never be reached due to the error handling above,
+    // but TypeScript requires a return value
+    return {
+      status: 500,
+      data: {
+        error: true,
+        message: 'Unknown error occurred'
+      }
+    };
+  }
+
+  /**
+   * Gets all command definitions for a TPA
+   * Used by Mira AI to discover available commands
+   * @param packageName - The package name of the TPA
+   * @returns Array of command definitions
+   */
+  async getTpaCommands(packageName: string): Promise<CommandSchema[]> {
+    // Look up the TPA by packageName
+    const app = await this.getApp(packageName);
+    
+    if (!app) {
+      throw new Error(`App ${packageName} not found`);
+    }
+    
+    // Get the app document from MongoDB to access the commands array
+    const appDoc = await App.findOne({ packageName });
+    if (!appDoc) {
+      throw new Error(`App ${packageName} not found in database`);
+    }
+    
+    // Return the commands array or empty array if no commands defined
+    return appDoc.commands || [];
+  }
 
 }
 
