@@ -297,9 +297,99 @@ export class TranscriptionService {
     try {
       const streamType = data.type === StreamType.TRANSLATION ? StreamType.TRANSLATION : StreamType.TRANSCRIPTION;
       console.log("🎤 Broadcasting result: ", streamType, data);
+      
+      // Check for command matches in final transcriptions
+      if (data.type === StreamType.TRANSCRIPTION && data.isFinal && userSession.activeAppSessions?.length > 0) {
+        this.matchCommandsInTranscription(userSession, data as TranscriptionData)
+          .catch(error => {
+            console.error('❌ Error matching commands:', error);
+          });
+      }
+      
+      // Broadcast the transcription to subscribed TPAs
       webSocketService.broadcastToTpa(userSession.sessionId, streamType, data);
     } catch (error) {
       console.error('❌ Error broadcasting result:', error);
+    }
+  }
+  
+  /**
+   * Matches transcription text against active TPA command phrases
+   * @param userSession The user session
+   * @param transcription The transcription data with the text to match
+   */
+  private async matchCommandsInTranscription(
+    userSession: ExtendedUserSession,
+    transcription: TranscriptionData
+  ): Promise<void> {
+    if (!transcription.text) {
+      return; // Skip empty transcriptions
+    }
+
+    try {
+      const text = transcription.text.trim().toLowerCase();
+      console.log(`🔍 [Command Matching] Checking for commands in: "${text}"`);
+
+      // Get active TPA package names
+      const activeTPAs = userSession.activeAppSessions || [];
+      if (activeTPAs.length === 0) {
+        return; // No active TPAs to match commands for
+      }
+
+      // Import App model here to avoid circular dependencies
+      const App = require('../../models/app.model').default;
+
+      // For each active TPA, check if the transcription matches any command phrases
+      for (const packageName of activeTPAs) {
+        // Get the app and its commands
+        const app = await App.findOne({ packageName });
+        if (!app || !app.commands || app.commands.length === 0) {
+          continue; // No commands defined for this app
+        }
+
+        console.log(`🔍 [Command Matching] Checking ${app.commands.length} commands for "${packageName}"`);
+
+        // Check each command for matching phrases
+        for (const command of app.commands) {
+          for (const phrase of command.phrases) {
+            const normalizedPhrase = phrase.trim().toLowerCase();
+            
+            // For MVP, just check if the text contains the exact phrase
+            if (text.includes(normalizedPhrase)) {
+              console.log(`✅ [Command Matching] Matched command "${command.id}" with phrase "${normalizedPhrase}" for app "${packageName}"`);
+              
+              // Get the WebSocket connection for this TPA
+              const websocket = userSession.appConnections.get(packageName);
+              if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                console.warn(`❌ [Command Matching] TPA "${packageName}" socket not connected, can't send command`);
+                continue;
+              }
+
+              // Import the CloudToTpaMessageType type to avoid circular dependencies
+              const { CloudToTpaMessageType } = require('@augmentos/sdk');
+
+              // Create and send CommandActivate message
+              const commandActivateMessage = {
+                type: CloudToTpaMessageType.COMMAND_ACTIVATE,
+                command_id: command.id,
+                spoken_phrase: text,
+                parameters: null, // MVP: No parameter extraction
+                timestamp: new Date(),
+                sessionId: `${userSession.sessionId}-${packageName}`
+              };
+
+              websocket.send(JSON.stringify(commandActivateMessage));
+              console.log(`📤 [Command Matching] Sent command_activate to "${packageName}" for command "${command.id}"`);
+              
+              // For MVP, we break after finding the first match
+              // Future enhancement: handle multiple matches or parameter extraction
+              break;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [Command Matching] Error matching commands:`, error);
     }
   }
 

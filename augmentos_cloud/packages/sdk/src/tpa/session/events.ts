@@ -21,6 +21,7 @@ import {
   NotificationDismissed,
   AudioChunk,
   CalendarEvent,
+  CommandActivateData,
   // Language stream helpers
   createTranscriptionStream,
   isValidLanguageCode,
@@ -36,6 +37,7 @@ interface SystemEvents {
   'disconnected': string;
   'error': WebSocketError | Error;
   'settings_update': AppSettings;
+  'command_activate': CommandActivateData;
 }
 
 /** 📡 All possible event types */
@@ -359,5 +361,36 @@ export class EventManager {
         }
       }
     }
+  }
+
+  /**
+   * 🎮 Listen for command activation events
+   * @param handlerOrCommandId - Either a handler function or a specific command ID
+   * @param handler - If first param is command ID, this is the handler function
+   * @returns Cleanup function to remove the handler
+   */
+  onCommandActivate(
+    handlerOrCommandId: ((data: CommandActivateData) => void) | string,
+    handler?: (data: CommandActivateData) => void
+  ): () => void {
+    // Case 1: onCommandActivate(handler) - listen for all commands
+    if (typeof handlerOrCommandId === 'function') {
+      return this.on('command_activate', handlerOrCommandId);
+    }
+    
+    // Case 2: onCommandActivate(commandId, handler) - listen for specific command
+    if (typeof handlerOrCommandId === 'string' && handler) {
+      const commandId = handlerOrCommandId;
+      const wrappedHandler = (data: CommandActivateData) => {
+        if (data.command_id === commandId) {
+          handler(data);
+        }
+      };
+      // Store the original handler for cleanup
+      const cleanup = this.on('command_activate', wrappedHandler);
+      return cleanup;
+    }
+    
+    throw new Error('Invalid arguments to onCommandActivate');
   }
 }

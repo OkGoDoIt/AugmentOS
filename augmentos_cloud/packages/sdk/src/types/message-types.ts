@@ -84,6 +84,9 @@ export enum CloudToTpaMessageType {
   // Stream data
   DATA_STREAM = 'data_stream',
 
+  // Command activation
+  COMMAND_ACTIVATE = 'command_activate',
+
   WEBSOCKET_ERROR = 'websocket_error'
 }
 

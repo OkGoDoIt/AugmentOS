@@ -10,7 +10,7 @@
 import { AppI, StopWebhookRequest, TpaType, WebhookResponse, AppState, SessionWebhookRequest } from '@augmentos/sdk';
 import axios, { AxiosError } from 'axios';
 import { systemApps } from './system-apps';
-import App from '../../models/app.model';
+import App, { CommandParameterSchema, CommandSchema } from '../../models/app.model';
 import { User } from '../../models/user.model';
 import crypto from 'crypto';
 
@@ -371,13 +371,81 @@ export class AppService {
   }
 
   /**
+   * Validates command definitions against the schema requirements
+   * @param commands Array of command definitions to validate
+   * @returns Validated and sanitized commands array or throws error if invalid
+   */
+  private validateCommandDefinitions(commands: any[]): CommandSchema[] {
+    if (!Array.isArray(commands)) {
+      throw new Error('Commands must be an array');
+    }
+    
+    return commands.map(command => {
+      // Validate required fields
+      if (!command.id || typeof command.id !== 'string') {
+        throw new Error('Command id is required and must be a string');
+      }
+      
+      if (!command.description || typeof command.description !== 'string') {
+        throw new Error('Command description is required and must be a string');
+      }
+      
+      if (!Array.isArray(command.phrases) || command.phrases.length === 0) {
+        throw new Error('Command phrases must be a non-empty array');
+      }
+      
+      // Validate parameters if they exist
+      const validatedParameters: Record<string, CommandParameterSchema> = {};
+      
+      if (command.parameters) {
+        Object.entries(command.parameters).forEach(([key, param]: [string, any]) => {
+          if (!param.type || !['string', 'number', 'boolean'].includes(param.type)) {
+            throw new Error(`Parameter ${key} has invalid type. Must be string, number, or boolean`);
+          }
+          
+          if (!param.description || typeof param.description !== 'string') {
+            throw new Error(`Parameter ${key} requires a description`);
+          }
+          
+          validatedParameters[key] = {
+            type: param.type as 'string' | 'number' | 'boolean',
+            description: param.description,
+            required: !!param.required
+          };
+          
+          // Add enum values if present
+          if (param.enum && Array.isArray(param.enum)) {
+            validatedParameters[key].enum = param.enum;
+          }
+        });
+      }
+      
+      return {
+        id: command.id,
+        description: command.description,
+        phrases: command.phrases.map((p: string) => p.trim()),
+        parameters: Object.keys(validatedParameters).length > 0 ? validatedParameters : undefined
+      };
+    });
+  }
+
+  /**
    * Create a new app
    */
   async createApp(appData: any, developerId: string): Promise<{ app: AppI, apiKey: string }> {
     // Generate API key
     const apiKey = crypto.randomBytes(32).toString('hex');
     const hashedApiKey = this.hashApiKey(apiKey);
-
+    
+    // Parse and validate commands if present
+    if (appData.commands) {
+      try {
+        appData.commands = this.validateCommandDefinitions(appData.commands);
+      } catch (error: any) {
+        throw new Error(`Invalid command definitions: ${error.message}`);
+      }
+    }
+    
     // Create app
     const app = await App.create({
       ...appData,
@@ -411,7 +479,16 @@ export class AppService {
     if (app.developerId.toString() !== developerId) {
       throw new Error('You do not have permission to update this app');
     }
-
+    
+    // Parse and validate commands if present
+    if (appData.commands) {
+      try {
+        appData.commands = this.validateCommandDefinitions(appData.commands);
+      } catch (error: any) {
+        throw new Error(`Invalid command definitions: ${error.message}`);
+      }
+    }
+    
     // If developerInfo is provided, ensure it's properly structured
     if (appData.developerInfo) {
       // Make sure only valid fields are included

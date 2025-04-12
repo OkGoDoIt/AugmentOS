@@ -26,6 +26,7 @@ import {
   PhoneNotification,
   TranscriptionData,
   TranslationData,
+  CommandActivateData,
 
   // Type guards
   isTpaConnectionAck,
@@ -241,6 +242,19 @@ export class TpaSession {
    */
   onPhoneNotifications(handler: (data: PhoneNotification) => void): () => void {
     return this.events.onPhoneNotifications(handler);
+  }
+
+  /**
+   * 🎮 Listen for command activation events
+   * @param handlerOrCommandId - Either a handler function or a specific command ID
+   * @param handler - If first param is command ID, this is the handler function
+   * @returns Cleanup function to remove the handler
+   */
+  onCommandActivate(
+    handlerOrCommandId: ((data: CommandActivateData) => void) | string,
+    handler?: (data: CommandActivateData) => void
+  ): () => void {
+    return this.events.onCommandActivate(handlerOrCommandId, handler);
   }
 
   // =====================================
@@ -808,6 +822,10 @@ export class TpaSession {
           const reason = message.reason || 'unknown';
           const displayReason = `App stopped: ${reason}`;
           this.events.emit('disconnected', displayReason);
+        }
+        else if (message.type === CloudToTpaMessageType.COMMAND_ACTIVATE) {
+          const commandMessage = message as CommandActivateData;
+          this.events.emit('command_activate', commandMessage);
         }
         // Handle unrecognized message types gracefully
         else {

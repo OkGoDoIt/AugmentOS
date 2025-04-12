@@ -104,6 +104,21 @@ export interface DataStream extends BaseMessage {
   data: unknown; // Type depends on the streamType
 }
 
+//===========================================================
+// Command Activation
+//===========================================================
+
+/**
+ * Command activate message sent when a spoken phrase matches a TPA command
+ */
+export interface CommandActivateData extends BaseMessage {
+  type: CloudToTpaMessageType.COMMAND_ACTIVATE;
+  command_id: string;       // The 'id' from tpa_config.json
+  spoken_phrase: string;    // The actual phrase spoken by the user
+  parameters: Record<string, string | number | boolean> | null; // Extracted parameters { key: value }
+  timestamp: Date;          // Time the command was recognized
+}
+
 /**
  * Union type for all messages from cloud to TPAs
  */
@@ -117,6 +132,7 @@ export type CloudToTpaMessage =
   | AudioChunk
   | LocationUpdate
   | CalendarEvent
+  | CommandActivateData
   | DataStream;
 
 //===========================================================
